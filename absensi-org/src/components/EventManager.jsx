@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { supabase } from "./lib/supabaseClient";
+import { supabase } from "../lib/supabaseClient";
 import { Btn, Card, Input, Msg } from './ui'
 
 export default function EventManager({ profile }) {
