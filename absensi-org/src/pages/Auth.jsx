@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { supabase } from '../lib/supabaseClient'
+import { supabase } from '../lib/supabaseclient'
 import { Btn, Input, Msg } from '../components/ui'
 
 export default function Auth({ onLogin }) {
