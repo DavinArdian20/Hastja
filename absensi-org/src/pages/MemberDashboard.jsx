@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { supabase } from '../lib/supabaseclient'
+import { supabase } from "./lib/supabaseClient";'
 import QRScanner from '../components/QRScanner'
 import KasManager from '../components/KasManager'
 import MeetingManager from '../components/MeetingManager'
