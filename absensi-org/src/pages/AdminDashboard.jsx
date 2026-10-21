@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
-import { supabase } from "./lib/supabaseClient";
+import { supabase } from "../lib/supabaseClient";
 import { Btn, Card, Input, Msg, Tabs, fmt } from '../components/ui'
 
 export default function AdminDashboard() {

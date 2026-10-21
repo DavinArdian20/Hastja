@@ -20,14 +20,13 @@ export default function MemberDashboard({ session, onLogout }) {
     try {
       setLoading(true)
 
-      // 1. Ambil data profil dari database (fleksibel user_id / id)
+      // 1. Ambil data profil dari database
       let { data: profileData } = await supabase
         .from('profiles')
         .select('*')
         .or(`user_id.eq.${user.id},id.eq.${user.id}`)
         .maybeSingle()
 
-      // Jika data profil belum ada, buatkan otomatis
       if (!profileData && user) {
         const fallbackName = user.user_metadata?.full_name || user.user_metadata?.username || user.email?.split('@')[0]
 
@@ -49,12 +48,14 @@ export default function MemberDashboard({ session, onLogout }) {
 
       setProfile(profileData)
 
-      // 2. Ambil riwayat presensi (lengkap dengan data meetings & events)
-      const { data: historyData } = await supabase
+      // 2. Ambil riwayat presensi (diurutkan berdasarkan waktu_absen)
+      const { data: historyData, error: histErr } = await supabase
         .from('attendances')
         .select('*, events(*), meetings(*)')
         .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
+        .order('waktu_absen', { ascending: false })
+
+      if (histErr) console.error('Error fetching history:', histErr)
 
       setHistory(historyData || [])
     } catch (err) {
@@ -109,14 +110,13 @@ export default function MemberDashboard({ session, onLogout }) {
         throw attendErr
       }
 
-      setMsg({ type: 'success', text: `Berhasil presensi untuk: ${event.title}` })
+      setMsg({ type: 'success', text: `Berhasil presensi untuk: ${event.title || event.nama_event}` })
       fetchProfileAndHistory()
     } catch (err) {
       setMsg({ type: 'error', text: err.message || 'Gagal melakukan presensi.' })
     }
   }
 
-  // Tampilan Nama & Email / Username
   const displayName = profile?.nama || profile?.full_name || user?.user_metadata?.full_name || '-'
   const displayUsername = profile?.email || profile?.username || user?.user_metadata?.username || user?.email?.split('@')[0] || '-'
 
@@ -150,7 +150,6 @@ export default function MemberDashboard({ session, onLogout }) {
 
       {/* Main Container */}
       <main className="mx-auto max-w-3xl space-y-6 p-4 sm:p-6">
-        {/* Navigation Tabs */}
         <Tabs
           active={activeTab}
           onChange={setActiveTab}
@@ -167,7 +166,6 @@ export default function MemberDashboard({ session, onLogout }) {
         {/* --- TAB 1: BERANDA --- */}
         {activeTab === 'home' && (
           <div className="space-y-6">
-            {/* Banner Quick Scan */}
             <div className="flex items-center justify-between rounded-xl border border-hastja-navy/60 bg-gradient-to-r from-hastja-navy/40 to-hastja-card p-5 shadow-lg">
               <div>
                 <h3 className="font-bold text-white">Siap untuk Presensi?</h3>
@@ -181,10 +179,7 @@ export default function MemberDashboard({ session, onLogout }) {
               </button>
             </div>
 
-            {/* Manager Uang Kas Dinamis */}
             <KasManager profile={profile} />
-
-            {/* Manager Jadwal Rapat & Notulen */}
             <MeetingManager profile={profile} />
           </div>
         )}
@@ -218,12 +213,12 @@ export default function MemberDashboard({ session, onLogout }) {
                   <div key={item.id} className="flex items-center justify-between py-3">
                     <div>
                       <p className="font-medium text-white">
-                        {item.meetings?.title || item.events?.title || 'Kegiatan / Rapat'}
+                        {item.meetings?.title || item.events?.nama_event || 'Kegiatan / Rapat'}
                       </p>
-                      <p className="text-xs text-gray-400">{fmt(item.created_at)}</p>
+                      <p className="text-xs text-gray-400">{fmt(item.waktu_absen)}</p>
                     </div>
                     <span className="rounded-full border border-green-800 bg-green-950/60 px-2.5 py-1 text-xs font-medium text-green-300">
-                      Hadir
+                      {item.status || 'Hadir'}
                     </span>
                   </div>
                 ))}
