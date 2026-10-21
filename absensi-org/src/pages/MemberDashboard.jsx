@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
-import { supabase } from "../lib/supabaseClient";
+import { supabase } from '../lib/supabaseClient'
 import QRScanner from '../components/QRScanner'
 import KasManager from '../components/KasManager'
 import MeetingManager from '../components/MeetingManager'
+import GalleryManager from '../components/GalleryManager'
+import Kepengurusan from '../components/Kepengurusan'
 import { Btn, Card, Msg, Tabs, fmt } from '../components/ui'
 import logo from '../assets/logo.png'
-import GalleryManager from '../components/GalleryManager'
 
 export default function MemberDashboard({ session, onLogout }) {
   const [activeTab, setActiveTab] = useState('home')
@@ -30,7 +31,10 @@ export default function MemberDashboard({ session, onLogout }) {
 
       // Jika data profil belum ada di database, buatkan otomatis
       if (!profileData && user) {
-        const fallbackName = user.user_metadata?.full_name || user.user_metadata?.username || user.email?.split('@')[0]
+        const fallbackName =
+          user.user_metadata?.full_name ||
+          user.user_metadata?.username ||
+          user.email?.split('@')[0]
 
         const { data: newProfile } = await supabase
           .from('profiles')
@@ -50,7 +54,7 @@ export default function MemberDashboard({ session, onLogout }) {
 
       setProfile(profileData)
 
-      // 2. Ambil riwayat presensi polos (tanpa join relasi yang rentan error)
+      // 2. Ambil riwayat presensi
       const { data: historyData, error: histErr } = await supabase
         .from('attendances')
         .select('*')
@@ -62,13 +66,11 @@ export default function MemberDashboard({ session, onLogout }) {
       if (historyData && historyData.length > 0) {
         const eventIds = historyData.map((h) => h.event_id)
 
-        // Ambil nama acara/rapat secara terpisah berdasarkan event_id
         const [{ data: meetingsData }, { data: eventsData }] = await Promise.all([
           supabase.from('meetings').select('id, title').in('id', eventIds),
           supabase.from('events').select('id, nama_event').in('id', eventIds),
         ])
 
-        // Pemetaan nama kegiatan/rapat ke array riwayat
         const formattedHistory = historyData.map((item) => {
           const meeting = meetingsData?.find((m) => m.id === item.event_id)
           const event = eventsData?.find((e) => e.id === item.event_id)
@@ -96,14 +98,12 @@ export default function MemberDashboard({ session, onLogout }) {
   const handleScan = async (qrCodeText) => {
     setMsg({ type: '', text: '' })
     try {
-      // 1. Cek di tabel meetings terlebih dahulu
       let { data: event } = await supabase
         .from('meetings')
         .select('*')
         .eq('qr_code', qrCodeText)
         .maybeSingle()
 
-      // Fallback ke tabel events jika tidak ada di meetings
       if (!event) {
         const { data: eData } = await supabase
           .from('events')
@@ -117,12 +117,10 @@ export default function MemberDashboard({ session, onLogout }) {
         throw new Error('QR Code tidak valid atau kegiatan tidak ditemukan.')
       }
 
-      // 2. Cek apakah QR sudah Kadaluarsa
       if (event.qr_expires_at && new Date() > new Date(event.qr_expires_at)) {
         throw new Error('Waktu presensi habis! QR Code sudah kadaluarsa.')
       }
 
-      // 3. Simpan data presensi
       const { error: attendErr } = await supabase
         .from('attendances')
         .insert([{ user_id: user.id, event_id: event.id }])
@@ -141,9 +139,13 @@ export default function MemberDashboard({ session, onLogout }) {
     }
   }
 
-  // Tampilan Nama & Username/Email
   const displayName = profile?.nama || profile?.full_name || user?.user_metadata?.full_name || '-'
-  const displayUsername = profile?.email || profile?.username || user?.user_metadata?.username || user?.email?.split('@')[0] || '-'
+  const displayUsername =
+    profile?.email ||
+    profile?.username ||
+    user?.user_metadata?.username ||
+    user?.email?.split('@')[0] ||
+    '-'
 
   return (
     <div className="min-h-screen bg-hastja-bg text-white">
@@ -154,7 +156,7 @@ export default function MemberDashboard({ session, onLogout }) {
             <img
               src={logo}
               alt="Logo Hastja"
-              className="h-10 w-10 rounded-full border border-hastja-gold/50 object-cover bg-white"
+              className="h-10 w-10 rounded-full border border-hastja-gold/50 bg-white object-cover"
             />
             <div>
               <h1 className="text-base font-bold text-white">{displayName}</h1>
@@ -180,6 +182,7 @@ export default function MemberDashboard({ session, onLogout }) {
           onChange={setActiveTab}
           tabs={[
             { id: 'home', label: 'Beranda' },
+            { id: 'structure', label: 'Kepengurusan' },
             { id: 'scan', label: 'Scan QR' },
             { id: 'history', label: 'Riwayat' },
             { id: 'profile', label: 'Profil' },
@@ -191,6 +194,7 @@ export default function MemberDashboard({ session, onLogout }) {
         {/* --- TAB 1: BERANDA --- */}
         {activeTab === 'home' && (
           <div className="space-y-6">
+            {/* 1. Card Shortcut Presensi */}
             <div className="flex items-center justify-between rounded-xl border border-hastja-navy/60 bg-gradient-to-r from-hastja-navy/40 to-hastja-card p-5 shadow-lg">
               <div>
                 <h3 className="font-bold text-white">Siap untuk Presensi?</h3>
@@ -204,12 +208,21 @@ export default function MemberDashboard({ session, onLogout }) {
               </button>
             </div>
 
+            {/* 2. Manajer Kas */}
             <KasManager profile={profile} />
+
+            {/* 3. Manajer Rapat / Agenda */}
             <MeetingManager profile={profile} />
+
+            {/* 4. Galeri Dokumentasi Kegiatan */}
+            <GalleryManager profile={profile} />
           </div>
         )}
 
-        {/* --- TAB 2: SCAN QR --- */}
+        {/* --- TAB 2: KEPENGURUSAN --- */}
+        {activeTab === 'structure' && <Kepengurusan />}
+
+        {/* --- TAB 3: SCAN QR --- */}
         {activeTab === 'scan' && (
           <Card className="space-y-4 border-hastja-border bg-hastja-card text-center">
             <div>
@@ -224,7 +237,7 @@ export default function MemberDashboard({ session, onLogout }) {
           </Card>
         )}
 
-        {/* --- TAB 3: RIWAYAT --- */}
+        {/* --- TAB 4: RIWAYAT --- */}
         {activeTab === 'history' && (
           <Card className="space-y-4 border-hastja-border bg-hastja-card">
             <h2 className="text-lg font-semibold text-white">Riwayat Kehadiran</h2>
@@ -250,7 +263,7 @@ export default function MemberDashboard({ session, onLogout }) {
           </Card>
         )}
 
-        {/* --- TAB 4: PROFIL --- */}
+        {/* --- TAB 5: PROFIL --- */}
         {activeTab === 'profile' && (
           <Card className="space-y-4 border-hastja-border bg-hastja-card">
             <h2 className="text-lg font-semibold text-white">Informasi Akun</h2>
@@ -270,30 +283,6 @@ export default function MemberDashboard({ session, onLogout }) {
             </div>
           </Card>
         )}
-
-        {/* --- TAB 1: BERANDA --- */}
-{activeTab === 'home' && (
-  <div className="space-y-6">
-    <div className="flex items-center justify-between rounded-xl border border-hastja-navy/60 bg-gradient-to-r from-hastja-navy/40 to-hastja-card p-5 shadow-lg">
-      <div>
-        <h3 className="font-bold text-white">Siap untuk Presensi?</h3>
-        <p className="text-xs text-gray-300">Pindai QR Code kegiatan yang disediakan pengurus.</p>
-      </div>
-      <button
-        onClick={() => setActiveTab('scan')}
-        className="rounded-lg bg-hastja-gold px-4 py-2 text-xs font-bold text-gray-950 transition-all hover:bg-[#d49142]"
-      >
-        Scan Sekarang
-      </button>
-    </div>
-
-    <KasManager profile={profile} />
-    <MeetingManager profile={profile} />
-
-    {/* Fitur dokumentasi foto langsung muncul di Beranda */}
-    <GalleryManager profile={profile} />
-  </div>
-)}
       </main>
     </div>
   )
