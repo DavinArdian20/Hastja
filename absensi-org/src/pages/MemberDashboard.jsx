@@ -5,6 +5,7 @@ import KasManager from '../components/KasManager'
 import MeetingManager from '../components/MeetingManager'
 import { Btn, Card, Msg, Tabs, fmt } from '../components/ui'
 import logo from '../assets/logo.png'
+import GalleryManager from '../components/GalleryManager'
 
 export default function MemberDashboard({ session, onLogout }) {
   const [activeTab, setActiveTab] = useState('home')
@@ -269,6 +270,30 @@ export default function MemberDashboard({ session, onLogout }) {
             </div>
           </Card>
         )}
+
+        {/* --- TAB 1: BERANDA --- */}
+{activeTab === 'home' && (
+  <div className="space-y-6">
+    <div className="flex items-center justify-between rounded-xl border border-hastja-navy/60 bg-gradient-to-r from-hastja-navy/40 to-hastja-card p-5 shadow-lg">
+      <div>
+        <h3 className="font-bold text-white">Siap untuk Presensi?</h3>
+        <p className="text-xs text-gray-300">Pindai QR Code kegiatan yang disediakan pengurus.</p>
+      </div>
+      <button
+        onClick={() => setActiveTab('scan')}
+        className="rounded-lg bg-hastja-gold px-4 py-2 text-xs font-bold text-gray-950 transition-all hover:bg-[#d49142]"
+      >
+        Scan Sekarang
+      </button>
+    </div>
+
+    <KasManager profile={profile} />
+    <MeetingManager profile={profile} />
+
+    {/* Fitur dokumentasi foto langsung muncul di Beranda */}
+    <GalleryManager profile={profile} />
+  </div>
+)}
       </main>
     </div>
   )
