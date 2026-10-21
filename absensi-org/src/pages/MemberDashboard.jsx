@@ -27,6 +27,7 @@ export default function MemberDashboard({ session, onLogout }) {
         .or(`user_id.eq.${user.id},id.eq.${user.id}`)
         .maybeSingle()
 
+      // Jika data profil belum ada di database, buatkan otomatis
       if (!profileData && user) {
         const fallbackName = user.user_metadata?.full_name || user.user_metadata?.username || user.email?.split('@')[0]
 
@@ -48,16 +49,38 @@ export default function MemberDashboard({ session, onLogout }) {
 
       setProfile(profileData)
 
-      // 2. Ambil riwayat presensi (diurutkan berdasarkan waktu_absen)
+      // 2. Ambil riwayat presensi polos (tanpa join relasi yang rentan error)
       const { data: historyData, error: histErr } = await supabase
         .from('attendances')
-        .select('*, events(*), meetings(*)')
+        .select('*')
         .eq('user_id', user.id)
         .order('waktu_absen', { ascending: false })
 
       if (histErr) console.error('Error fetching history:', histErr)
 
-      setHistory(historyData || [])
+      if (historyData && historyData.length > 0) {
+        const eventIds = historyData.map((h) => h.event_id)
+
+        // Ambil nama acara/rapat secara terpisah berdasarkan event_id
+        const [{ data: meetingsData }, { data: eventsData }] = await Promise.all([
+          supabase.from('meetings').select('id, title').in('id', eventIds),
+          supabase.from('events').select('id, nama_event').in('id', eventIds),
+        ])
+
+        // Pemetaan nama kegiatan/rapat ke array riwayat
+        const formattedHistory = historyData.map((item) => {
+          const meeting = meetingsData?.find((m) => m.id === item.event_id)
+          const event = eventsData?.find((e) => e.id === item.event_id)
+          return {
+            ...item,
+            title_display: meeting?.title || event?.nama_event || 'Kegiatan / Rapat',
+          }
+        })
+
+        setHistory(formattedHistory)
+      } else {
+        setHistory([])
+      }
     } catch (err) {
       console.error('Error fetching data:', err)
     } finally {
@@ -117,6 +140,7 @@ export default function MemberDashboard({ session, onLogout }) {
     }
   }
 
+  // Tampilan Nama & Username/Email
   const displayName = profile?.nama || profile?.full_name || user?.user_metadata?.full_name || '-'
   const displayUsername = profile?.email || profile?.username || user?.user_metadata?.username || user?.email?.split('@')[0] || '-'
 
@@ -212,9 +236,7 @@ export default function MemberDashboard({ session, onLogout }) {
                 {history.map((item) => (
                   <div key={item.id} className="flex items-center justify-between py-3">
                     <div>
-                      <p className="font-medium text-white">
-                        {item.meetings?.title || item.events?.nama_event || 'Kegiatan / Rapat'}
-                      </p>
+                      <p className="font-medium text-white">{item.title_display}</p>
                       <p className="text-xs text-gray-400">{fmt(item.waktu_absen)}</p>
                     </div>
                     <span className="rounded-full border border-green-800 bg-green-950/60 px-2.5 py-1 text-xs font-medium text-green-300">

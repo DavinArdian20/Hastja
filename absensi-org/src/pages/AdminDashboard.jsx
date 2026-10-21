@@ -7,8 +7,15 @@ export default function AdminDashboard() {
   const [tab, setTab] = useState('events')
   return (
     <div className="flex flex-col gap-4">
-      <Tabs value={tab} onChange={setTab}
-        tabs={[['events', 'Agenda & QR'], ['izin', 'Verifikasi izin'], ['rekap', 'Rekap absensi']]} />
+      <Tabs
+        value={tab}
+        onChange={setTab}
+        tabs={[
+          ['events', 'Agenda & QR'],
+          ['izin', 'Verifikasi Izin'],
+          ['rekap', 'Rekap Absensi'],
+        ]}
+      />
       {tab === 'events' && <EventsTab />}
       {tab === 'izin' && <PermissionsTab />}
       {tab === 'rekap' && <RekapTab />}
@@ -28,6 +35,7 @@ function EventsTab() {
     const { data } = await supabase.from('events').select('*').order('tanggal', { ascending: false })
     setEvents(data ?? [])
   }, [])
+
   useEffect(() => { load() }, [load])
 
   const useMyLocation = () =>
@@ -39,27 +47,40 @@ function EventsTab() {
 
   const create = async (e) => {
     e.preventDefault()
+    if (!f.tanggal) {
+      return setMsg({ ok: false, text: 'Silakan pilih tanggal dan waktu agenda.' })
+    }
+
     const { error } = await supabase.from('events').insert({
       nama_event: f.nama_event,
       tanggal: new Date(f.tanggal).toISOString(),
-      latitude: Number(f.latitude), longitude: Number(f.longitude),
-      radius_meter: Number(f.radius_meter)
+      latitude: Number(f.latitude),
+      longitude: Number(f.longitude),
+      radius_meter: Number(f.radius_meter),
     })
+
     if (error) return setMsg({ ok: false, text: error.message })
-    setMsg({ ok: true, text: 'Agenda dibuat.' }); setF(empty); load()
+    setMsg({ ok: true, text: 'Agenda berhasil dibuat.' })
+    setF(empty)
+    load()
   }
 
   const remove = async (id) => {
     if (!confirm('Hapus agenda ini beserta data presensinya?')) return
-    await supabase.from('events').delete().eq('id', id); load()
+    await supabase.from('events').delete().eq('id', id)
+    load()
   }
 
   return (
     <>
       <Card>
         <form onSubmit={create} className="grid gap-3 sm:grid-cols-2">
-          <div className="sm:col-span-2"><Input placeholder="Nama agenda" value={f.nama_event} onChange={set('nama_event')} required /></div>
-          <div className="sm:col-span-2"><Input type="datetime-local" value={f.tanggal} onChange={set('tanggal')} required /></div>
+          <div className="sm:col-span-2">
+            <Input placeholder="Nama agenda" value={f.nama_event} onChange={set('nama_event')} required />
+          </div>
+          <div className="sm:col-span-2">
+            <Input type="datetime-local" value={f.tanggal} onChange={set('tanggal')} required />
+          </div>
           <Input type="number" step="any" placeholder="Latitude" value={f.latitude} onChange={set('latitude')} required />
           <Input type="number" step="any" placeholder="Longitude" value={f.longitude} onChange={set('longitude')} required />
           <Input type="number" min="10" placeholder="Radius (meter)" value={f.radius_meter} onChange={set('radius_meter')} required />
@@ -77,7 +98,9 @@ function EventsTab() {
               <p className="text-xs text-stone-600">{fmt(ev.tanggal)} · radius {ev.radius_meter} m</p>
             </div>
             <div className="flex gap-2">
-              <Btn variant="ghost" onClick={() => setQr(qr === ev.id ? null : ev.id)}>{qr === ev.id ? 'Tutup QR' : 'Tampilkan QR'}</Btn>
+              <Btn variant="ghost" onClick={() => setQr(qr === ev.id ? null : ev.id)}>
+                {qr === ev.id ? 'Tutup QR' : 'Tampilkan QR'}
+              </Btn>
               <Btn variant="danger" onClick={() => remove(ev.id)}>Hapus</Btn>
             </div>
           </div>
@@ -95,13 +118,43 @@ function EventsTab() {
 
 function PermissionsTab() {
   const [rows, setRows] = useState([])
+
   const load = useCallback(async () => {
-    const { data } = await supabase
-      .from('permissions')
-      .select('*, profiles(nama, divisi), events(nama_event, tanggal)')
-      .order('created_at', { ascending: false })
-    setRows(data ?? [])
+    try {
+      const { data: permData } = await supabase
+        .from('permissions')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      if (!permData || permData.length === 0) {
+        setRows([])
+        return
+      }
+
+      // Ambil data profil & events secara terpisah agar aman dari error FK
+      const [{ data: profiles }, { data: events }] = await Promise.all([
+        supabase.from('profiles').select('user_id, id, nama, divisi'),
+        supabase.from('events').select('id, nama_event, tanggal'),
+      ])
+
+      const combined = permData.map((p) => {
+        const prof = profiles?.find((pr) => pr.user_id === p.user_id || pr.id === p.user_id)
+        const ev = events?.find((e) => e.id === p.event_id)
+        return {
+          ...p,
+          nama_user: prof?.nama || 'Anggota',
+          divisi_user: prof?.divisi || '-',
+          nama_event: ev?.nama_event || 'Kegiatan',
+          tanggal_event: ev?.tanggal || p.created_at,
+        }
+      })
+
+      setRows(combined)
+    } catch (err) {
+      console.error('Error loading permissions:', err)
+    }
   }, [])
+
   useEffect(() => { load() }, [load])
 
   const decide = async (id, status_approval) => {
@@ -110,10 +163,11 @@ function PermissionsTab() {
   }
 
   if (!rows.length) return <p className="text-sm text-stone-600">Belum ada pengajuan izin.</p>
+
   return rows.map((r) => (
     <Card key={r.id}>
-      <p className="font-medium">{r.profiles?.nama} <span className="text-xs font-normal text-stone-600">({r.jenis})</span></p>
-      <p className="text-xs text-stone-600">{r.events?.nama_event} · {fmt(r.events?.tanggal)}</p>
+      <p className="font-medium">{r.nama_user} <span className="text-xs font-normal text-stone-600">({r.jenis})</span></p>
+      <p className="text-xs text-stone-600">{r.nama_event} · {fmt(r.tanggal_event)}</p>
       <p className="my-2 text-sm">{r.alasan}</p>
       {r.status_approval === 'pending' ? (
         <div className="flex gap-2">
@@ -129,40 +183,103 @@ function PermissionsTab() {
 
 function RekapTab() {
   const [rows, setRows] = useState([])
+  const [loading, setLoading] = useState(true)
+
   useEffect(() => {
-    supabase.from('attendances')
-      .select('status, waktu_absen, jarak_meter, profiles(nama, divisi), events(nama_event, tanggal)')
-      .order('waktu_absen', { ascending: false })
-      .then(({ data }) => setRows(data ?? []))
+    const loadRekap = async () => {
+      try {
+        setLoading(true)
+        const { data: attData } = await supabase
+          .from('attendances')
+          .select('*')
+          .order('waktu_absen', { ascending: false })
+
+        if (!attData || attData.length === 0) {
+          setRows([])
+          return
+        }
+
+        // Ambil data referensi dari profiles, events, dan meetings secara mandiri
+        const [{ data: profiles }, { data: events }, { data: meetings }] = await Promise.all([
+          supabase.from('profiles').select('user_id, id, nama, divisi'),
+          supabase.from('events').select('id, nama_event, tanggal'),
+          supabase.from('meetings').select('id, title, date'),
+        ])
+
+        const combined = attData.map((att) => {
+          const prof = profiles?.find((p) => p.user_id === att.user_id || p.id === att.user_id)
+          const ev = events?.find((e) => e.id === att.event_id)
+          const mt = meetings?.find((m) => m.id === att.event_id)
+
+          return {
+            ...att,
+            nama_user: prof?.nama || 'Tanpa Nama',
+            divisi_user: prof?.divisi || '-',
+            nama_agenda: mt?.title || ev?.nama_event || 'Kegiatan / Rapat',
+            tanggal_agenda: mt?.date || ev?.tanggal || att.waktu_absen,
+          }
+        })
+
+        setRows(combined)
+      } catch (err) {
+        console.error('Error loading rekap:', err)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadRekap()
   }, [])
 
   const exportCsv = () => {
     const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`
     const head = ['Nama', 'Divisi', 'Agenda', 'Tanggal agenda', 'Status', 'Waktu absen', 'Jarak (m)']
-    const body = rows.map((r) => [r.profiles?.nama, r.profiles?.divisi, r.events?.nama_event,
-      r.events?.tanggal, r.status, r.waktu_absen, r.jarak_meter].map(esc).join(','))
+    const body = rows.map((r) =>
+      [r.nama_user, r.divisi_user, r.nama_agenda, r.tanggal_agenda, r.status, r.waktu_absen, r.jarak_meter]
+        .map(esc)
+        .join(',')
+    )
     const blob = new Blob(['\ufeff' + [head.map(esc).join(','), ...body].join('\n')], { type: 'text/csv;charset=utf-8' })
     const a = document.createElement('a')
-    a.href = URL.createObjectURL(blob); a.download = 'rekap-presensi.csv'; a.click()
+    a.href = URL.createObjectURL(blob)
+    a.download = 'rekap-presensi.csv'
+    a.click()
   }
 
   return (
     <>
-      <Btn onClick={exportCsv} disabled={!rows.length} className="self-start">Ekspor CSV</Btn>
+      <Btn onClick={exportCsv} disabled={!rows.length || loading} className="self-start">
+        Ekspor CSV
+      </Btn>
       <div className="overflow-x-auto rounded-lg bg-white ring-1 ring-stone-200">
         <table className="w-full text-left text-sm">
           <thead className="bg-stone-50 text-xs text-stone-600">
-            <tr><th className="p-2">Nama</th><th className="p-2">Agenda</th><th className="p-2">Status</th><th className="p-2">Waktu</th></tr>
+            <tr>
+              <th className="p-2">Nama</th>
+              <th className="p-2">Agenda</th>
+              <th className="p-2">Status</th>
+              <th className="p-2">Waktu</th>
+            </tr>
           </thead>
           <tbody>
-            {rows.map((r, i) => (
-              <tr key={i} className="border-t border-stone-100">
-                <td className="p-2">{r.profiles?.nama}</td>
-                <td className="p-2">{r.events?.nama_event}</td>
-                <td className="p-2">{r.status}</td>
-                <td className="p-2 whitespace-nowrap">{fmt(r.waktu_absen)}</td>
+            {loading ? (
+              <tr>
+                <td colSpan="4" className="p-4 text-center text-xs text-stone-500">Memuat rekap...</td>
               </tr>
-            ))}
+            ) : rows.length === 0 ? (
+              <tr>
+                <td colSpan="4" className="p-4 text-center text-xs text-stone-500">Belum ada data presensi.</td>
+              </tr>
+            ) : (
+              rows.map((r, i) => (
+                <tr key={r.id || i} className="border-t border-stone-100">
+                  <td className="p-2">{r.nama_user}</td>
+                  <td className="p-2">{r.nama_agenda}</td>
+                  <td className="p-2 capitalize">{r.status}</td>
+                  <td className="p-2 whitespace-nowrap">{fmt(r.waktu_absen)}</td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>
